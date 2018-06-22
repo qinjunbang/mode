@@ -1,0 +1,2 @@
+# mode
+javascript design mode
