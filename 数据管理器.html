@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+
+<script>
+//    var storage = localStorage || window.localStorage;
+//
+////    storage.setItem("a", "a");
+////    storage.setItem("b", "b");
+////    storage.setItem("c", "c");
+//    for (var i = 0; i < storage.length; i++) {
+//        console.log("key", storage.key(i));
+//    }
+
+    /*
+    * 本地存储类
+    * @preId : 本地存储库前缀
+    * @timeSign : 时间戳与存储数据之间的拼接符
+    * */
+    var BaseLocalStorage = function (preId, timeSign) {
+        // 定义本地存储库前缀
+        this.preId = preId;
+        // 定义时间戳与数据之间的拼接符
+        this.timeSign = timeSign || '|-|';
+    };
+
+    // 本地存储库原型方法
+    BaseLocalStorage.prototype = {
+        // 操作状态
+        status: {
+            success: 1, //成功
+            failure: 0, //失败
+            overflow: 2, // 溢出
+            timeout: 3  // 过期
+
+        },
+
+        // 保存本地存储库链接
+        storage: localStorage || window.localStorage,
+
+        // 获取本地存储数据库真实字段
+        getKey: function (key) {
+            return this.preId + key;
+        },
+
+        /*
+        * 添加(修改)数据
+        * @key : 数据字段标识
+        * @value : 数据值
+        * @callback : 回调函数
+        * @time : 添加时间
+        * */
+        set: function (key, value, callback,time) {
+            console.log(typeof value);
+            // 默认操作成功
+            var status = this.status.success,
+            // 获取真实字段
+                key = this.getKey(key);
+
+            // 如果传过来的不最字符串
+            if ( typeof value !== 'string') {
+                value = JSON.stringify(value);
+            }
+
+            try {
+                // 获取参数时间的时间戳
+                time = new Date(time).getTime() || time.getTime();
+            } catch (e) {
+                // 为传入时间参数,或者时间参数有误时,获得默认时间周期: 1月
+                time = new Date().getTime() + 1000 * 60 * 60 * 24 * 31;
+            }
+
+            try {
+                // 向数据库中添加数据
+                this.storage.setItem(key, time + this.timeSign + value);
+            } catch (e) {
+                // 溢出失败
+                status = this.status.overflow;
+            }
+
+            // 有回调函数,执行并传入参数操作状态,真实数据标识及存储数据值
+            callback && callback.call(this, status, key, value);
+
+        },
+
+        /*
+        * 获取数据
+        * @key : 数据字段标识
+        * @callback : 回调函数
+        * */
+        get: function (key, callback) {
+                // 默认操作成功
+            var status = this.status.success,
+                //获取真实字段标识
+                key = this.getKey(key),
+                // 默认值为空
+                value = null,
+                // 时间戳与数据之间的拼接长度
+                timeSignLen = this.timeSign.length,
+                // 缓存当前对象
+                _that = this,
+                // 时间戳与字符拼接起始位置
+                index,
+                // 时间戳
+                time,
+                // 最终取得的数据
+                result;
+
+            try {
+                // 获取字段对应的数据字符串
+                value = _that.storage.getItem(key);
+            } catch(e) {
+                // 获取失败返回失败状态,数据为null
+                result = {
+                    status: _that.status.failure,
+                    value: null
+                };
+                // 执行回调并返回
+                callback && callback.call(this, result.status, result.value);
+
+                return result;
+            }
+
+            // 如果成功获取数据
+            if (value) {
+                // 获取时间戳与数据之间的拼接符起始位置
+                index = value.indexOf(_that.timeSign);
+                // 获取时间戳
+                time = +value.slice(0, index);
+                // 如果没过期
+                if (new Date(time).getTime() > new Date().getTime() || time == 0) {
+                    // 获取数据结果
+                    value = value.slice(index + timeSignLen);
+                } else {
+                    // 过期则为 null
+                    value = null;
+                    // 设置状态为过期
+                    status = _that.status.timeout;
+                    // 删除字段
+                    _that.remove(key);
+                }
+            } else {
+                // 没拿到数据
+                status = _that.status.failure;
+            }
+
+            // 设置结果
+            result = {
+                status: status,
+                value: value
+            };
+            // 执行回调
+            callback && callback.call(this, result.status, result.value);
+
+            // 返回结果
+            return result;
+
+
+        },
+
+        /*
+        * 删除数据
+        * @key : 数据字段标识
+        * @callback : 回调函数
+        * */
+        remove: function (key, callback) {
+            // 设置状态默认失败
+            var status = this.status.failure,
+                // 获取真实字段标识
+                key = this.getKey(key),
+                // 设置数据结果为空
+                value = null;
+
+            try {
+                // 获取字段对应数据
+                value = this.storage.getItem(key);
+            } catch(e) {}
+
+            // 如果数据存在
+            if (value) {
+                try {
+                    // 删除数据
+                    this.storage.removeItem(key);
+                    // 设置操作状态为成功
+                    status = this.status.success;
+                } catch(e) {}
+            }
+
+            // 执行回调函数
+            callback && callback.call(this, status, status === 1 ? value.slice(value.indexOf(this.timeSign) + this.timeSign.length) : null)
+        },
+        // 获取数据存储的大小
+        getSize: function () {
+            var storage = this.storage,
+                len = storage.length,
+                str = "", // 所有数据字符串
+                charCode, // 字符在编码中的位置
+                total = 0; // 字节数
+
+            // 遍历所有的 storage
+            for (var i = 0; i < len; i++) {
+                var key = storage.key(i);
+
+                // 只要当前库的 数据
+                if (!key.indexOf(this.preId)) {
+                    // 拿到所有数据字符串
+                    str += storage.getItem(key);
+                }
+            }
+
+            console.log("str", str);
+
+            // 计算字节
+            for (var i = 0, len = str.length; i < len; i++) {
+                // 查找字符编码位置
+                charCode = str.charCodeAt(i);
+                // 确定是几个字节编码一个字符
+                if (charCode <= 0xffff) {
+                    total += 2;
+                } else {
+                    total += 4;
+                }
+            }
+
+            // 因为 lostorage 最多只能存几M, 所以单位只算到 MB
+            var KB = 1024,
+                MB  = 1024 * 1024;
+
+            console.log("字节数", total);
+
+            // 数据大于 1 MB
+            if (total / MB > 1) {
+
+                return total/MB + "M";
+
+            } else if (total / KB > 1) {
+
+                return total / KB + "K";
+
+            } else {
+                return total + "B"
+            }
+        },
+        // 删除本库所有字段
+        removeAllItem: function () {
+            var storage = this.storage,
+                    len = storage.length;
+
+            // 遍历所有的 storage
+            for (var i = 0; i < len; i++) {
+                var key = storage.key(i);
+
+                // 只要当前库的 数据
+                if (!key.indexOf(this.preId)) {
+                    // 删除有数据字符串
+                    storage.removeItem(key);
+                }
+            }
+
+            console.log("删除成功");
+            return "删除成功";
+        }
+    };
+
+    // 测试
+    var LS = new BaseLocalStorage('LS_');
+
+//    LS.set("name", "覃俊榜", function () {
+//        console.log("设置数据成功", arguments);
+//    });
+//
+//    LS.get("name", function () {
+//        console.log("获取数据成功", arguments);
+//    });
+//     LS.remove("name", function () {
+//         console.log("删除成功", arguments);
+//     })
+//      LS.get("userInfo", function (status, vlaue) {
+//          console.log("获取数据成功", status);
+//          console.log("获取数据成功", vlaue);
+//      });
+        var size = LS.getSize();
+        console.log("size", size);
+
+        // 删除所有
+        var res = LS.removeAllItem();
+
+        console.log("res", res);
+</script>
+</body>
+</html>
